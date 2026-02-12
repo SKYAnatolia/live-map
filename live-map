@@ -1,70 +1,73 @@
-import express from "express";
-import axios from "axios";
-import http from "http";
-import { Server } from "socket.io";
-import cors from "cors";
+<div id="map" style="height:600px;"></div>
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-rotatedmarker/leaflet.rotatedMarker.js"></script>
+
+<script>
 const API_KEY = "EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5";
-const PORT = 3000;
 
-const app = express();
-app.use(cors());
-app.use(express.static("public"));
+const map = L.map('map').setView([39, 35], 6);
 
-const server = http.createServer(app);
-const io = new Server(server);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
 
-let sessionId = null;
+let markers = {};
 
-async function getSessionId() {
-    const res = await axios.get(
-        `https://api.infiniteflight.com/public/v2/sessions?apikey=${EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5}`
+async function getExpertSession() {
+    const res = await fetch(
+        `https://api.infiniteflight.com/public/v2/sessions?apikey=${API_KEY}`
     );
-
-    const expert = res.data.result.find(s =>
-        s.name === "Expert Server"
-    );
-
-    sessionId = expert?.id;
-    console.log("Expert Session ID:", sessionId);
+    const data = await res.json();
+    const expert = data.result.find(s => s.name === "Expert Server");
+    return expert.id;
 }
 
-async function fetchFlights() {
-    if (!sessionId) return;
+async function fetchFlights(sessionId) {
+    const res = await fetch(
+        `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${API_KEY}`
+    );
+    const data = await res.json();
+    return data.result
+        .filter(f => f.callsign && f.callsign.endsWith("SL"));
+}
 
-    try {
-        const res = await axios.get(
-            `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5}`
-        );
+const planeIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+});
 
-        const flights = res.data.result;
+async function updateMap() {
+    const sessionId = await getExpertSession();
+    const flights = await fetchFlights(sessionId);
 
-        const slFlights = flights
-            .filter(f => f.callsign?.endsWith("SL"))
-            .map(f => ({
-                callsign: f.callsign,
-                latitude: f.latitude,
-                longitude: f.longitude,
-                altitude: Math.round(f.altitude),
-                speed: Math.round(f.speed),
-                heading: f.heading,
-                departure: f.departureAirportId,
-                arrival: f.arrivalAirportId
-            }));
-
-        io.emit("updateFlights", slFlights);
-
-    } catch (err) {
-        console.log("Flight fetch error:", err.message);
+    for (let key in markers) {
+        map.removeLayer(markers[key]);
     }
+    markers = {};
+
+    flights.forEach(f => {
+        const marker = L.marker(
+            [f.latitude, f.longitude],
+            {
+                icon: planeIcon,
+                rotationAngle: f.heading
+            }
+        ).addTo(map);
+
+        marker.bindPopup(`
+            <b>${f.callsign}</b><br>
+            ${f.departureAirportId} → ${f.arrivalAirportId}<br>
+            FL${Math.round(f.altitude/100)}<br>
+            ${Math.round(f.speed)} KT
+        `);
+
+        markers[f.callsign] = marker;
+    });
 }
 
-io.on("connection", socket => {
-    console.log("Client connected");
-});
-
-server.listen(PORT, async () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    await getSessionId();
-    setInterval(fetchFlights, 20000); // 20 saniye
-});
+updateMap();
+setInterval(updateMap, 20000);
+</script>

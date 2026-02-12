@@ -1,88 +1,70 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>RYANAIR VIRTUAL LIVE MAP</title>
+import express from "express";
+import axios from "axios";
+import http from "http";
+import { Server } from "socket.io";
+import cors from "cors";
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-html, body {
-  height: 100%;
-  margin: 0;
-  background: #0e1a2b;
-}
-
-#map {
-  height: 100%;
-}
-
-.leaflet-popup-content {
-  font-family: Arial;
-  font-size: 13px;
-}
-</style>
-</head>
-
-<body>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
 const API_KEY = "EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5";
-const VA_PREFIX = "RYR";   // Callsign prefix değiştirilebilir
-const REFRESH_INTERVAL = 30000; // 30 saniye
+const PORT = 3000;
 
-const map = L.map('map').setView([50, 10], 4);
+const app = express();
+app.use(cors());
+app.use(express.static("public"));
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap'
-}).addTo(map);
+const server = http.createServer(app);
+const io = new Server(server);
 
-let markers = [];
+let sessionId = null;
 
-function clearMarkers() {
-  markers.forEach(marker => map.removeLayer(marker));
-  markers = [];
+async function getSessionId() {
+    const res = await axios.get(
+        `https://api.infiniteflight.com/public/v2/sessions?apikey=${API_KEY}`
+    );
+
+    const expert = res.data.result.find(s =>
+        s.name === "Expert Server"
+    );
+
+    sessionId = expert?.id;
+    console.log("Expert Session ID:", sessionId);
 }
 
-function loadFlights() {
-  fetch(`https://api.infiniteflight.com/public/v2/flights?apikey=${API_KEY}`)
-  .then(res => res.json())
-  .then(data => {
+async function fetchFlights() {
+    if (!sessionId) return;
 
-    clearMarkers();
+    try {
+        const res = await axios.get(
+            `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${API_KEY}`
+        );
 
-    if (!data.result) return;
+        const flights = res.data.result;
 
-    data.result.forEach(flight => {
+        const slFlights = flights
+            .filter(f => f.callsign?.endsWith("SL"))
+            .map(f => ({
+                callsign: f.callsign,
+                latitude: f.latitude,
+                longitude: f.longitude,
+                altitude: Math.round(f.altitude),
+                speed: Math.round(f.speed),
+                heading: f.heading,
+                departure: f.departureAirportId,
+                arrival: f.arrivalAirportId
+            }));
 
-      if (!flight.callsign) return;
-      if (!flight.callsign.startsWith(VA_PREFIX)) return;
-      if (!flight.latitude || !flight.longitude) return;
+        io.emit("updateFlights", slFlights);
 
-      const marker = L.marker([flight.latitude, flight.longitude]).addTo(map);
-
-      marker.bindPopup(`
-        <b>${flight.callsign}</b><br>
-        Aircraft: ${flight.aircraftId}<br>
-        Altitude: ${Math.round(flight.altitude)} ft<br>
-        Speed: ${Math.round(flight.speed)} kts<br>
-        From: ${flight.departureAirportId}<br>
-        To: ${flight.arrivalAirportId}
-      `);
-
-      markers.push(marker);
-    });
-  });
+    } catch (err) {
+        console.log("Flight fetch error:", err.message);
+    }
 }
 
-loadFlights();
-setInterval(loadFlights, REFRESH_INTERVAL);
+io.on("connection", socket => {
+    console.log("Client connected");
+});
 
-</script>
-
-</body>
-</html>
+server.listen(PORT, async () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    await getSessionId();
+    setInterval(fetchFlights, 20000); // 20 saniye
+});

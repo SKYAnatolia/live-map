@@ -14,60 +14,21 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let markers = {};
+let sessionId = null;
 
-async function getExpertSession() {
+// Expert Server ID al
+async function getSession() {
     const res = await fetch(
         `https://api.infiniteflight.com/public/v2/sessions?apikey=${API_KEY}`
     );
     const data = await res.json();
     const expert = data.result.find(s => s.name === "Expert Server");
-    return expert.id;
+    sessionId = expert.id;
 }
 
-async function fetchFlights(sessionId) {
+// Uçuşları çek
+async function fetchFlights() {
+    if (!sessionId) return;
+
     const res = await fetch(
-        `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${API_KEY}`
-    );
-    const data = await res.json();
-    return data.result
-        .filter(f => f.callsign && f.callsign.endsWith("SL"));
-}
-
-const planeIcon = L.icon({
-    iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-    iconSize: [28, 28],
-    iconAnchor: [14, 14]
-});
-
-async function updateMap() {
-    const sessionId = await getExpertSession();
-    const flights = await fetchFlights(sessionId);
-
-    for (let key in markers) {
-        map.removeLayer(markers[key]);
-    }
-    markers = {};
-
-    flights.forEach(f => {
-        const marker = L.marker(
-            [f.latitude, f.longitude],
-            {
-                icon: planeIcon,
-                rotationAngle: f.heading
-            }
-        ).addTo(map);
-
-        marker.bindPopup(`
-            <b>${f.callsign}</b><br>
-            ${f.departureAirportId} → ${f.arrivalAirportId}<br>
-            FL${Math.round(f.altitude/100)}<br>
-            ${Math.round(f.speed)} KT
-        `);
-
-        markers[f.callsign] = marker;
-    });
-}
-
-updateMap();
-setInterval(updateMap, 20000);
-</script>
+        `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?api

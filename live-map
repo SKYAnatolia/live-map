@@ -18,7 +18,7 @@ let sessionId = null;
 
 async function getSessionId() {
     const res = await axios.get(
-        `https://api.infiniteflight.com/public/v2/sessions?apikey=${API_KEY}`
+        `https://api.infiniteflight.com/public/v2/sessions?apikey=${EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5}`
     );
 
     const expert = res.data.result.find(s =>
@@ -34,7 +34,7 @@ async function fetchFlights() {
 
     try {
         const res = await axios.get(
-            `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${API_KEY}`
+            `https://api.infiniteflight.com/public/v2/sessions/${sessionId}/flights?apikey=${EC5j4KH1v6QNhTVlcCRZ2dvhQgXccMf5}`
         );
 
         const flights = res.data.result;
